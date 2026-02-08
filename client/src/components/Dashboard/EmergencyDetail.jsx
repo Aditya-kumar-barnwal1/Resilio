@@ -1,5 +1,8 @@
 import React from 'react';
 import { X, MapPin, Mic, ShieldCheck, Send } from 'lucide-react';
+const BACKEND_URL = window.location.hostname === "localhost"
+  ? "http://localhost:8000"
+  : "https://resilio-tbts.onrender.com"; // 👈 YOUR ACTUAL RENDER BACKEND URL
 
 const EmergencyDetail = ({ incident, onClose }) => {
   if (!incident) return null;
@@ -9,16 +12,18 @@ const EmergencyDetail = ({ incident, onClose }) => {
       <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[600px]">
         
         {/* Left Side: Visual Evidence (AI Image Analysis) */}
-        // Inside EmergencyDetail.jsx
-// ...
-<div className="md:w-1/2 bg-slate-200 relative">
-  <img 
-    // ADD THE LOCALHOST DOMAIN HERE
-    src={incident.imageUrl ? `http://localhost:8000${incident.imageUrl}` : "https://via.placeholder.com/600x800?text=No+Image"} 
-    alt="Emergency Evidence"
-    className="w-full h-full object-cover"
-  />
-// ...
+     
+    
+    <div className="md:w-1/2 bg-slate-200 relative">
+      <img 
+        // 2. Use the dynamic BACKEND_URL here
+        src={incident.imageUrl ? `${BACKEND_URL}${incident.imageUrl}` : "https://via.placeholder.com/600x800?text=No+Image"} 
+        alt="Emergency Evidence"
+        className="w-full h-full object-cover"
+        // Add error handling to see if the link is broken
+        onError={(e) => { e.target.onerror = null; e.target.src="https://via.placeholder.com/600x800?text=Image+Load+Failed" }}
+      />
+      
           <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-lg">
             <MapPin size={12} /> Geo-Tagged Verified
           </div>

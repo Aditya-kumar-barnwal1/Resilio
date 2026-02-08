@@ -6,7 +6,7 @@ import axios from 'axios';
 import { io } from 'socket.io-client';
 
 // Connect to your Backend Server
-const ENDPOINT = "http://localhost:8000"; 
+const ENDPOINT = "https://resilio-tbts.onrender.com"; 
 const socket = io(ENDPOINT);
 
 const Dashboard = () => {
