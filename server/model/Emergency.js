@@ -21,6 +21,7 @@ const emergencySchema = new mongoose.Schema({
   imageUrl: {
     type: String // Stores the path to the uploaded image (e.g., /uploads/emergency-123.jpg)
   },
+  audioUrl: { type: String },
   voiceTranscript: {
     type: String // Optional: For the Whisper AI text
   },

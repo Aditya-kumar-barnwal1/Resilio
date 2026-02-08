@@ -5,7 +5,8 @@ import { createEmergency, getEmergencies } from '../controllers/emergencyControl
 const Emergencyrouter = express.Router();
 
 // POST: Handles form-data with image 'image' field
-Emergencyrouter.post('/', upload.single('image'), createEmergency);
+Emergencyrouter.post('/', upload.fields([{name:'image',maxCount:1},{name:'audio',maxCount:1}
+]), createEmergency);
 
 // GET: Fetches list for dashboard
 Emergencyrouter.get('/', getEmergencies);

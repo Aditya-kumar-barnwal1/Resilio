@@ -7,31 +7,49 @@ export const createEmergency = async (req, res) => {
   try {
     const { type, description, lat, lng } = req.body;
     
-    // 1. Process the Image URL
-    // If a file was uploaded, create the URL path
-    const imageUrl = req.file ? `/uploads/${req.file.filename}` : null;
+    // ---------------------------------------------------------
+    // 1. EXTRACT CLOUDINARY URLS (Image & Audio)
+    // ---------------------------------------------------------
+    // We use req.files['fieldname'] because we are using upload.fields() now
+    
+    // Check if image exists
+    const imageFile = req.files && req.files['image'] ? req.files['image'][0] : null;
+    const imageUrl = imageFile ? imageFile.path : null;
 
-    // Analyzing description for critical keywords
+    // Check if audio exists
+    const audioFile = req.files && req.files['audio'] ? req.files['audio'][0] : null;
+    const audioUrl = audioFile ? audioFile.path : null;
+
+    // ---------------------------------------------------------
+    // 2. AI SEVERITY LOGIC
+    // ---------------------------------------------------------
     let severity = 'Minor';
     const criticalKeywords = ['fire', 'blast', 'accident', 'bleeding', 'trapped', 'unconscious'];
     
-    if (criticalKeywords.some(word => description?.toLowerCase().includes(word))) {
+    if (description && criticalKeywords.some(word => description.toLowerCase().includes(word))) {
       severity = 'Critical';
     } else if (type === 'Medical' || type === 'Disaster') {
       severity = 'Serious';
     }
+
+    // ---------------------------------------------------------
+    // 3. CREATE & SAVE TO DB
+    // ---------------------------------------------------------
     const newEmergency = new Emergency({
       type,
       severity,
       description,
       location: { lat, lng },
-      imageUrl,
+      imageUrl,  // Save Image URL
+      audioUrl,  // ✅ Save Audio URL
       status: 'Pending'
     });
 
     const savedEmergency = await newEmergency.save();
 
-    // The 'io' instance is attached to req in server.js
+    // ---------------------------------------------------------
+    // 4. TRIGGER SOCKET.IO (Real-time Alert)
+    // ---------------------------------------------------------
     if (req.io) {
       req.io.emit('new-emergency', savedEmergency);
       console.log(`📡 Socket Event Emitted: new-emergency (ID: ${savedEmergency._id})`);

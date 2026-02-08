@@ -1,42 +1,30 @@
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import cloudinary from '../config/cloudinary.js';
 
-// Reconstruct __dirname for ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: async (req, file) => {
+    // 1. Detect if the file is Audio
+    const isAudio = file.mimetype.startsWith('audio');
+    
+    // 2. Get the file extension (e.g., "mp3", "m4a")
+    const ext = file.originalname.split('.').pop();
 
-// Ensure upload directory exists
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)){
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// Storage Strategy
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir); // Save to server/uploads
+    return {
+      folder: 'resilio_uploads',
+      
+      // ✅ CRITICAL FIX: Cloudinary needs 'video' for audio files
+      resource_type: isAudio ? 'video' : 'image',
+      
+      // ✅ Keep the original format (mp3/m4a)
+      format: ext, 
+      
+      public_id: file.fieldname + '-' + Date.now(),
+    };
   },
-  filename: function (req, file, cb) {
-    // Naming: emergency-TIMESTAMP.jpg
-    cb(null, `emergency-${Date.now()}${path.extname(file.originalname)}`);
-  }
 });
 
-// File Filter (Images Only)
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only images are allowed!'), false);
-  }
-};
-
-const upload = multer({ 
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-});
+const upload = multer({ storage });
 
 export default upload;
