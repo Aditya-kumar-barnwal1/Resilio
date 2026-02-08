@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { LayoutDashboard, Map as MapIcon, Shield, Bell, AlertTriangle, LogOut, Menu } from 'lucide-react';
+import { LayoutDashboard, Map as MapIcon, Shield, Bell, AlertTriangle, Menu, Calendar, Clock } from 'lucide-react';
 
 // Import your custom components
 import EmergencyMap from '../components/Map/EmergencyMap';
@@ -50,7 +50,7 @@ const Dashboard = () => {
     socket.on("new-emergency", (newReport) => {
       console.log("🚨 New Alert Received:", newReport);
 
-      // Play Alert Sound (Ensure 'alert.mp3' is in your public folder)
+      // Play Alert Sound
       try {
         const audio = new Audio('/alert.mp3'); 
         audio.play().catch(e => console.warn("Audio blocked by browser policy"));
@@ -63,11 +63,20 @@ const Dashboard = () => {
       setNotifications((prev) => prev + 1);
     });
 
-    // Cleanup: Disconnect socket when leaving the page
+    // Cleanup
     return () => {
       socket.disconnect();
     };
   }, [BACKEND_URL]);
+
+  // ✅ HELPER: Format Date & Time nicely
+  const formatDateTime = (isoString) => {
+    const date = new Date(isoString);
+    return {
+      time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), // "07:30 PM"
+      date: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })       // "08 Feb"
+    };
+  };
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans overflow-hidden">
@@ -171,48 +180,58 @@ const Dashboard = () => {
                     <p className="text-xs">No active threats detected.</p>
                   </div>
                 ) : (
-                  emergencies.map(incident => (
-                    <div 
-                      key={incident._id} 
-                      onClick={() => setSelectedIncident(incident)}
-                      className={`p-4 border rounded-xl cursor-pointer transition-all hover:shadow-md active:scale-[0.98] group ${
-                        selectedIncident?._id === incident._id 
-                        ? 'border-red-500 bg-red-50/50 ring-1 ring-red-500' 
-                        : 'border-slate-100 bg-white hover:border-red-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-sm font-bold text-slate-900 group-hover:text-red-700 transition-colors">
-                          {incident.type}
-                        </span>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold uppercase shadow-sm ${
-                          incident.severity === 'Critical' ? 'bg-red-600 text-white' : 
-                          incident.severity === 'Serious' ? 'bg-orange-500 text-white' :
-                          'bg-blue-500 text-white'
-                        }`}>
-                          {incident.severity}
-                        </span>
+                  emergencies.map(incident => {
+                    // ✅ Calculate date/time for each item
+                    const { time, date } = formatDateTime(incident.timestamp);
+                    
+                    return (
+                      <div 
+                        key={incident._id} 
+                        onClick={() => setSelectedIncident(incident)}
+                        className={`p-4 border rounded-xl cursor-pointer transition-all hover:shadow-md active:scale-[0.98] group ${
+                          selectedIncident?._id === incident._id 
+                          ? 'border-red-500 bg-red-50/50 ring-1 ring-red-500' 
+                          : 'border-slate-100 bg-white hover:border-red-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-sm font-bold text-slate-900 group-hover:text-red-700 transition-colors">
+                            {incident.type}
+                          </span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold uppercase shadow-sm ${
+                            incident.severity === 'Critical' ? 'bg-red-600 text-white' : 
+                            incident.severity === 'Serious' ? 'bg-orange-500 text-white' :
+                            'bg-blue-500 text-white'
+                          }`}>
+                            {incident.severity}
+                          </span>
+                        </div>
+                        
+                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">
+                          {incident.description || "No description provided."}
+                        </p>
+                        
+                        {/* ✅ UPDATED FOOTER WITH DATE & TIME */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                           <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                              <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                <Calendar size={10} className="text-slate-500" /> {date}
+                              </span>
+                              <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                <Clock size={10} className="text-slate-500" /> {time}
+                              </span>
+                           </div>
+                           
+                           {/* Audio Indicator */}
+                           {incident.audioUrl && (
+                             <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded flex items-center gap-1">
+                               🎤 Voice
+                             </span>
+                           )}
+                        </div>
                       </div>
-                      
-                      <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">
-                        {incident.description || "No description provided."}
-                      </p>
-                      
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                         {/* Audio Indicator */}
-                         {incident.audioUrl ? (
-                           <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
-                             🎤 Voice Note
-                           </span>
-                         ) : (
-                           <span className="text-[10px] text-slate-400">Text Report</span>
-                         )}
-                         <span className="text-[10px] text-slate-400 font-mono">
-                           {new Date(incident.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                         </span>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
           </div>

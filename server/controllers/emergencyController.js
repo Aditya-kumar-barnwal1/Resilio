@@ -77,3 +77,28 @@ export const getEmergencies = async (req, res) => {
     res.status(500).json({ error: 'Server Error' });
   }
 };
+
+// @desc    Update emergency status (e.g. Pending -> Resolved)
+// @route   PUT /api/v1/emergencies/:id/resolve
+export const resolveEmergency = async (req, res) => {
+  try {
+    const emergency = await Emergency.findById(req.params.id);
+
+    if (!emergency) {
+      return res.status(404).json({ success: false, error: 'Emergency not found' });
+    }
+
+    // Update status
+    emergency.status = 'Resolved';
+    await emergency.save();
+
+    // Notify dashboard to turn it green
+    if (req.io) {
+      req.io.emit('emergency-resolved', emergency._id);
+    }
+
+    res.json({ success: true, data: emergency });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Server Error' });
+  }
+};
