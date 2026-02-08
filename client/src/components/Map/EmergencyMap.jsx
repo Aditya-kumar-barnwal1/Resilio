@@ -25,17 +25,18 @@ const EmergencyMap = ({ emergencies }) => {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; OpenStreetMap contributors'
         />
-        {emergencies.map((incident) => (
-          <Marker key={incident.id} position={[incident.lat, incident.lng]}>
-            <Popup>
-              <div className="p-1">
-                <h4 className="font-bold text-red-600">{incident.type}</h4>
-                <p className="text-xs">{incident.description}</p>
-                <p className="text-[10px] text-slate-500 mt-1">Severity: {incident.severity}</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+        // Inside the map loop:
+          {emergencies.map((incident) => (
+            <Marker 
+              key={incident._id} 
+              // ACCESS COORDINATES FROM NESTED OBJECT
+              position={[incident.location.lat, incident.location.lng]} 
+            >
+              <Popup>
+                {/* ... popup content ... */}
+              </Popup>
+            </Marker>
+          ))}
       </MapContainer>
     </div>
   );
