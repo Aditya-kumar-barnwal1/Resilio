@@ -62,12 +62,23 @@ const Dashboard = () => {
       setEmergencies((prev) => [newReport, ...prev]);
       setNotifications((prev) => prev + 1);
     });
-
+    socket.on("emergency-deleted", (deletedId) => {
+      console.log("🗑️ Removing Case:", deletedId);
+      
+      // Filter out the deleted item from the state
+      setEmergencies((prevEmergencies) => 
+        prevEmergencies.filter((item) => item._id !== deletedId)
+      );
+      
+      // If the deleted case was open in the modal, close it
+      if (selectedIncident && selectedIncident._id === deletedId) {
+        setSelectedIncident(null);
+      }});
     // Cleanup
     return () => {
       socket.disconnect();
     };
-  }, [BACKEND_URL]);
+  }, [BACKEND_URL,selectedIncident]);
 
   // ✅ HELPER: Format Date & Time nicely
   const formatDateTime = (isoString) => {

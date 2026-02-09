@@ -102,3 +102,55 @@ export const resolveEmergency = async (req, res) => {
     res.status(500).json({ success: false, error: 'Server Error' });
   }
 };
+
+// @desc    Update emergency details (Severity, Department, Status)
+// @route   PUT /api/v1/emergencies/:id
+export const updateEmergency = async (req, res) => {
+  try {
+    const { severity, department, status } = req.body;
+    
+    const emergency = await Emergency.findById(req.params.id);
+    if (!emergency) return res.status(404).json({ error: 'Not found' });
+
+    // Update fields if provided
+    if (severity) emergency.severity = severity;
+    if (department) emergency.department = department; // Make sure to add this to your Model if needed!
+    if (status) emergency.status = status;
+
+    await emergency.save();
+
+    // Notify Dashboard
+    if (req.io) {
+      req.io.emit('emergency-updated', emergency);
+    }
+
+    res.json({ success: true, data: emergency });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Server Error' });
+  }
+};
+
+// @desc    Delete emergency (Remove from DB completely)
+// @route   DELETE /api/v1/emergencies/:id
+export const deleteEmergency = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Delete from MongoDB
+    const deletedEmergency = await Emergency.findByIdAndDelete(id);
+
+    if (!deletedEmergency) {
+      return res.status(404).json({ success: false, error: 'Emergency not found' });
+    }
+
+    // 2. Notify ALL Dashboards to remove this pin instantly
+    if (req.io) {
+      req.io.emit('emergency-deleted', id);
+    }
+
+    res.json({ success: true, message: 'Case Closed & Removed' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: 'Server Error' });
+  }
+};
