@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { LayoutDashboard, Map as MapIcon, Shield, Bell, AlertTriangle, Menu, Calendar, Clock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom'; // 👈 Import Navigate
+import { LayoutDashboard, Map as MapIcon, Shield, Bell, AlertTriangle, Menu, Calendar, Clock, Filter, LogOut, User, Settings } from 'lucide-react';
 
 // Import your custom components
 import EmergencyMap from '../components/Map/EmergencyMap';
 import EmergencyDetail from '../components/Dashboard/EmergencyDetail';
 
 const Dashboard = () => {
-  // 1. Determine Backend URL (Auto-switches for Live/Local)
+  const navigate = useNavigate(); // 👈 Initialize Navigation
+
+  // 1. Determine Backend URL
   const BACKEND_URL = useMemo(() => 
     window.location.hostname === "localhost" 
       ? "http://localhost:8000" 
@@ -19,80 +22,103 @@ const Dashboard = () => {
   const [emergencies, setEmergencies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedIncident, setSelectedIncident] = useState(null);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false); // 👈 Toggles the menu
   const [notifications, setNotifications] = useState(0);
+  const [activeFilter, setActiveFilter] = useState('All');
 
-  // 3. Fetch Data & Real-time Listeners
+  // ✅ LOGOUT FUNCTION
+  const handleLogout = () => {
+    // 1. Clear Local Storage
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    // 2. Redirect to Login
+    navigate("/");
+    
+    // 3. Optional: Force reload to clear any memory states
+    window.location.reload();
+  };
+
+  // ✅ EFFECT 1: Fetch Initial Data
   useEffect(() => {
-    // A. Fetch Initial Data
     const fetchEmergencies = async () => {
       try {
         const { data } = await axios.get(`${BACKEND_URL}/api/v1/emergencies`);
-        // Sort by newest first
-        const sortedData = data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        setEmergencies(sortedData);
+        setEmergencies(data);
         setLoading(false);
       } catch (error) {
         console.error("Error fetching data:", error);
         setLoading(false);
       }
     };
-
     fetchEmergencies();
+  }, [BACKEND_URL]);
 
-    // B. Setup Real-Time Socket Connection
-    const socket = io(BACKEND_URL);
-
-    socket.on("connect", () => {
-      console.log("✅ Connected to Live Server:", socket.id);
+  // ✅ EFFECT 2: Real-Time Socket
+  useEffect(() => {
+    const socket = io(BACKEND_URL, {
+      transports: ['websocket'], 
+      reconnectionAttempts: 5,
     });
 
     socket.on("new-emergency", (newReport) => {
-      console.log("🚨 New Alert Received:", newReport);
-
-      // Play Alert Sound
       try {
         const audio = new Audio('/alert.mp3'); 
-        audio.play().catch(e => console.warn("Audio blocked by browser policy"));
-      } catch (e) {
-        console.warn("Sound file not found");
-      }
+        audio.play().catch(e => console.warn("Audio blocked"));
+      } catch (e) { console.warn("No Audio File"); }
 
-      // Add new report to the TOP of the list immediately
       setEmergencies((prev) => [newReport, ...prev]);
       setNotifications((prev) => prev + 1);
     });
+
     socket.on("emergency-deleted", (deletedId) => {
-      console.log("🗑️ Removing Case:", deletedId);
-      
-      // Filter out the deleted item from the state
-      setEmergencies((prevEmergencies) => 
-        prevEmergencies.filter((item) => item._id !== deletedId)
-      );
-      
-      // If the deleted case was open in the modal, close it
-      if (selectedIncident && selectedIncident._id === deletedId) {
-        setSelectedIncident(null);
-      }});
-    // Cleanup
+      setEmergencies((prev) => prev.filter(item => item._id !== deletedId));
+    });
+
     return () => {
       socket.disconnect();
     };
-  }, [BACKEND_URL,selectedIncident]);
+  }, [BACKEND_URL]);
 
-  // ✅ HELPER: Format Date & Time nicely
+  // ✅ EFFECT 3: Handle Closing Modal when Item is Deleted
+  useEffect(() => {
+    if (selectedIncident) {
+      const exists = emergencies.find(e => e._id === selectedIncident._id);
+      if (!exists) setSelectedIncident(null);
+    }
+  }, [emergencies, selectedIncident]);
+
+
+  // 4. SMART SORTING & FILTERING
+  const processedEmergencies = useMemo(() => {
+    let data = [...emergencies];
+
+    if (activeFilter !== 'All') {
+      data = data.filter(item => item.severity === activeFilter);
+    }
+
+    const priorityScore = { 'Critical': 3, 'Serious': 2, 'Minor': 1, 'Fake': 0 };
+    
+    return data.sort((a, b) => {
+      const scoreA = priorityScore[a.severity] || 0;
+      const scoreB = priorityScore[b.severity] || 0;
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
+  }, [emergencies, activeFilter]);
+
   const formatDateTime = (isoString) => {
     const date = new Date(isoString);
     return {
-      time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }), // "07:30 PM"
-      date: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })       // "08 Feb"
+      time: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      date: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     };
   };
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans overflow-hidden">
       
-      {/* --- SIDEBAR --- */}
+      {/* SIDEBAR */}
       <aside className="w-64 bg-[#0f172a] text-white flex flex-col shadow-2xl z-20 hidden md:flex">
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
           <div className="bg-red-600 p-2 rounded-lg">
@@ -100,28 +126,15 @@ const Dashboard = () => {
           </div>
           <span className="text-xl font-bold tracking-tight">Resilio Ops</span>
         </div>
-        
         <nav className="flex-1 p-4 space-y-2">
-          <button className="w-full flex items-center gap-3 px-4 py-3 bg-red-600 rounded-lg text-sm font-semibold transition-all shadow-lg shadow-red-900/20">
+          <button className="w-full flex items-center gap-3 px-4 py-3 bg-red-600 rounded-lg text-sm font-semibold shadow-lg shadow-red-900/20">
             <LayoutDashboard size={18} /> Live Feed
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800 rounded-lg text-sm font-medium text-slate-400 transition-all">
-            <MapIcon size={18} /> Global Map
-          </button>
         </nav>
-        
-        <div className="p-4 border-t border-slate-800">
-           <div className="flex items-center gap-2 bg-slate-800/50 p-3 rounded-lg text-[10px] text-green-400 uppercase tracking-widest font-bold border border-slate-700">
-             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-             System Online
-           </div>
-        </div>
       </aside>
 
-      {/* --- MAIN CONTENT --- */}
+      {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col relative">
-        
-        {/* Header */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10">
           <div className="flex items-center gap-3">
             <Menu className="text-slate-500 md:hidden" />
@@ -140,7 +153,8 @@ const Dashboard = () => {
                 </span>
               )}
             </div>
-
+            
+            {/* 👤 PROFILE DROPDOWN AREA */}
             <div className="relative">
               <button 
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
@@ -154,91 +168,107 @@ const Dashboard = () => {
                   AD
                 </div>
               </button>
+
+              {/* 👇 THE DROPDOWN MENU 👇 */}
+              {showProfileMenu && (
+                <div className="absolute top-12 right-0 w-56 bg-white rounded-xl shadow-2xl border border-slate-100 py-2 z-50 animate-in slide-in-from-top-2 fade-in duration-200">
+                  <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/50">
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Signed in as</p>
+                    <p className="text-sm font-bold text-slate-800 truncate">officer.aditya@resilio.gov</p>
+                  </div>
+                  
+                  <div className="py-1">
+                    <button className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors">
+                      <User size={16} /> My Profile
+                    </button>
+                    <button className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors">
+                      <Settings size={16} /> Settings
+                    </button>
+                  </div>
+                  
+                  <div className="h-px bg-slate-100 my-1"></div>
+                  
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-3 transition-colors font-bold"
+                  >
+                    <LogOut size={16} /> Sign Out
+                  </button>
+                </div>
+              )}
+              {/* 👆 END DROPDOWN 👆 */}
             </div>
+
           </div>
         </header>
 
-        {/* Dashboard Body */}
         <section className="flex-1 flex p-4 md:p-6 gap-6 overflow-hidden relative">
-          
-          {/* LEFT: Map Component */}
           <div className="flex-[2] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden relative">
             <EmergencyMap emergencies={emergencies} />
           </div>
           
-          {/* RIGHT: Active Alerts List */}
-          <div className="hidden md:flex flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex-col overflow-hidden min-w-[320px] max-w-[400px]">
-              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between backdrop-blur-sm">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
-                  <AlertTriangle size={16} className="text-red-600" /> 
-                  Incoming Reports
-                </h3>
-                <span className="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded-full font-black uppercase tracking-wider">
-                  {emergencies.length} Active
-                </span>
+          <div className="hidden md:flex flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex-col overflow-hidden min-w-[350px] max-w-[400px]">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50 backdrop-blur-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm">
+                    <AlertTriangle size={16} className="text-red-600" /> Incoming Reports
+                  </h3>
+                  <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-1 rounded-full font-bold">{processedEmergencies.length}</span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {['All', 'Critical', 'Serious', 'Minor'].map(filter => (
+                    <button
+                      key={filter}
+                      onClick={() => setActiveFilter(filter)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all whitespace-nowrap ${
+                        activeFilter === filter 
+                        ? 'bg-slate-800 text-white border-slate-800 shadow-md' 
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
               </div>
               
               <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                 {loading ? (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-2">
-                    <div className="w-6 h-6 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-xs">Syncing Satellite Data...</p>
-                  </div>
-                ) : emergencies.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                    <Shield size={40} className="text-slate-200 mb-2" />
-                    <p className="text-sm font-medium">All Systems Nominal</p>
-                    <p className="text-xs">No active threats detected.</p>
-                  </div>
+                  <p className="text-center text-xs text-slate-400 mt-10">Syncing Data...</p>
+                ) : processedEmergencies.length === 0 ? (
+                  <p className="text-center text-xs text-slate-400 mt-10">No reports found.</p>
                 ) : (
-                  emergencies.map(incident => {
-                    // ✅ Calculate date/time for each item
+                  processedEmergencies.map(incident => {
                     const { time, date } = formatDateTime(incident.timestamp);
-                    
                     return (
                       <div 
                         key={incident._id} 
                         onClick={() => setSelectedIncident(incident)}
-                        className={`p-4 border rounded-xl cursor-pointer transition-all hover:shadow-md active:scale-[0.98] group ${
+                        className={`p-4 border rounded-xl cursor-pointer transition-all hover:shadow-md active:scale-[0.98] group relative overflow-hidden ${
                           selectedIncident?._id === incident._id 
                           ? 'border-red-500 bg-red-50/50 ring-1 ring-red-500' 
                           : 'border-slate-100 bg-white hover:border-red-200 hover:bg-slate-50'
                         }`}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-sm font-bold text-slate-900 group-hover:text-red-700 transition-colors">
-                            {incident.type}
-                          </span>
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                          incident.severity === 'Critical' ? 'bg-red-600' :
+                          incident.severity === 'Serious' ? 'bg-orange-500' : 'bg-blue-400'
+                        }`} />
+
+                        <div className="flex justify-between items-start mb-2 pl-2">
+                          <span className="text-sm font-bold text-slate-900 group-hover:text-red-700 transition-colors">{incident.type}</span>
                           <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold uppercase shadow-sm ${
-                            incident.severity === 'Critical' ? 'bg-red-600 text-white' : 
-                            incident.severity === 'Serious' ? 'bg-orange-500 text-white' :
-                            'bg-blue-500 text-white'
-                          }`}>
-                            {incident.severity}
-                          </span>
+                            incident.severity === 'Critical' ? 'bg-red-600 text-white animate-pulse' : 
+                            incident.severity === 'Serious' ? 'bg-orange-500 text-white' : 'bg-blue-500 text-white'
+                          }`}>{incident.severity}</span>
                         </div>
                         
-                        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3">
-                          {incident.description || "No description provided."}
-                        </p>
-                        
-                        {/* ✅ UPDATED FOOTER WITH DATE & TIME */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 pl-2">
                            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                              <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                                <Calendar size={10} className="text-slate-500" /> {date}
-                              </span>
-                              <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
-                                <Clock size={10} className="text-slate-500" /> {time}
-                              </span>
+                              <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200"><Calendar size={10} /> {date}</span>
+                              <span className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200"><Clock size={10} /> {time}</span>
                            </div>
-                           
-                           {/* Audio Indicator */}
-                           {incident.audioUrl && (
-                             <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded flex items-center gap-1">
-                               🎤 Voice
-                             </span>
-                           )}
+                           {incident.audioUrl && <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded">🎤 Voice</span>}
                         </div>
                       </div>
                     );
@@ -248,7 +278,6 @@ const Dashboard = () => {
           </div>
         </section>
 
-        {/* Detail Review Modal */}
         {selectedIncident && (
           <EmergencyDetail 
             incident={selectedIncident} 

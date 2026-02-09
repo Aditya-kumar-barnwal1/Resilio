@@ -21,16 +21,23 @@ const httpServer = createServer(app); // 3. Wrap app in HTTP server
 
 connectDB();
 
-// 4. Initialize Socket.io
+// ... imports
+
 const io = new Server(httpServer, {
   cors: {
-    origin: "*", // Allow all origins (Frontend)
-    methods: ["GET", "POST"]
+    origin: "*", // 👈 Allow ANY frontend to connect
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
   }
 });
 
+app.use(cors({
+  origin: "*", // 👈 Allow Express to accept requests from anywhere
+  credentials: true
+}));
+
+
 app.use(express.json());
-app.use(cors());
 
 // 5. Make 'uploads' folder public so frontend can access images
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
