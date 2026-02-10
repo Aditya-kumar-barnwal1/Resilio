@@ -1,6 +1,7 @@
-import Emergency from '../model/Emergency.js'; // Note the .js extension!
+import Emergency from '../model/Emergency.js';
+import axios from 'axios'; // 👈 Import Axios for AI calls
 
-// @desc    Create new emergency report & Notify Authorities
+// @desc    Create new emergency report & Trigger AI Analysis
 // @route   POST /api/v1/emergencies
 // @access  Public
 export const createEmergency = async (req, res) => {
@@ -10,55 +11,94 @@ export const createEmergency = async (req, res) => {
     // ---------------------------------------------------------
     // 1. EXTRACT CLOUDINARY URLS (Image & Audio)
     // ---------------------------------------------------------
-    // We use req.files['fieldname'] because we are using upload.fields() now
-    
-    // Check if image exists
     const imageFile = req.files && req.files['image'] ? req.files['image'][0] : null;
     const imageUrl = imageFile ? imageFile.path : null;
 
-    // Check if audio exists
     const audioFile = req.files && req.files['audio'] ? req.files['audio'][0] : null;
     const audioUrl = audioFile ? audioFile.path : null;
 
     // ---------------------------------------------------------
-    // 2. AI SEVERITY LOGIC
+    // 2. CREATE INITIAL REPORT (Saved immediately for speed)
     // ---------------------------------------------------------
-    let severity = 'Minor';
-    const criticalKeywords = ['fire', 'blast', 'accident', 'bleeding', 'trapped', 'unconscious'];
-    
-    if (description && criticalKeywords.some(word => description.toLowerCase().includes(word))) {
-      severity = 'Critical';
-    } else if (type === 'Medical' || type === 'Disaster') {
-      severity = 'Serious';
-    }
-
-    // ---------------------------------------------------------
-    // 3. CREATE & SAVE TO DB
-    // ---------------------------------------------------------
+    // We default severity to 'Pending' until AI or Admin updates it
     const newEmergency = new Emergency({
-      type,
-      severity,
+      type: type || 'General',
+      severity: 'Pending',
       description,
       location: { lat, lng },
-      imageUrl,  // Save Image URL
-      audioUrl,  // ✅ Save Audio URL
+      imageUrl,
+      audioUrl,
       status: 'Pending'
     });
 
     const savedEmergency = await newEmergency.save();
 
-    // ---------------------------------------------------------
-    // 4. TRIGGER SOCKET.IO (Real-time Alert)
-    // ---------------------------------------------------------
+    // ⚡ Emit "New Emergency" instantly (so Admin sees the pin ASAP)
     if (req.io) {
       req.io.emit('new-emergency', savedEmergency);
       console.log(`📡 Socket Event Emitted: new-emergency (ID: ${savedEmergency._id})`);
     }
 
+  // ---------------------------------------------------------
+    // 🤖 3. CALL YOUR AI API (Background Process)
+    // ---------------------------------------------------------
+    if (imageUrl) {
+      (async () => {
+        try {
+          console.log("🤖 Sending to AI for analysis...");
+          
+          // ✅ 1. THE EXACT URL FROM YOUR SCREENSHOT
+          const AI_API_URL = "https://resilio-qwo6.onrender.com/ai/image-url"; 
+
+          // ✅ 2. SEND DATA MATCHING THE SWAGGER DOCS
+          const aiResponse = await axios.post(AI_API_URL, {
+            emergencyId: savedEmergency._id.toString(), // "emergencyId" as per docs
+            imageUrl: imageUrl                          // "imageUrl" as per docs
+          });
+
+          // ✅ 3. HANDLE THE RESPONSE (Matches your other screenshot)
+          // The AI returns: { status: "...", analysis: { ... } }
+          const analysis = aiResponse.data.analysis; 
+
+          console.log("✅ AI Analysis Complete:", analysis);
+
+          // 4. UPDATE DATABASE
+          if (analysis) {
+            savedEmergency.aiAnalysis = analysis;
+            
+            // Update Severity if AI provides it
+            if (analysis.severity) {
+              const aiSeverity = analysis.severity.charAt(0).toUpperCase() + analysis.severity.slice(1).toLowerCase();
+              
+              // Validate against your Enum
+              if (['Critical', 'Serious', 'Minor', 'Fake'].includes(aiSeverity)) {
+                  savedEmergency.severity = aiSeverity;
+              }
+            }
+
+            await savedEmergency.save();
+
+            // ⚡ Emit Update to Dashboard
+            if (req.io) {
+              req.io.emit('emergency-updated', savedEmergency);
+              console.log("📡 AI Update Emitted to Dashboard");
+            }
+          }
+
+        } catch (aiError) {
+          console.error("❌ AI Analysis Failed:", aiError.message);
+          if (aiError.response) {
+             console.error("AI Server Response:", aiError.response.data);
+          }
+        }
+      })();
+    }
+
+    // 6. Send Response to User (Client doesn't wait for AI)
     res.status(201).json({
       success: true,
       data: savedEmergency,
-      message: "Emergency reported successfully."
+      message: "Emergency reported successfully. AI analysis started."
     });
 
   } catch (error) {
@@ -78,31 +118,6 @@ export const getEmergencies = async (req, res) => {
   }
 };
 
-// @desc    Update emergency status (e.g. Pending -> Resolved)
-// @route   PUT /api/v1/emergencies/:id/resolve
-export const resolveEmergency = async (req, res) => {
-  try {
-    const emergency = await Emergency.findById(req.params.id);
-
-    if (!emergency) {
-      return res.status(404).json({ success: false, error: 'Emergency not found' });
-    }
-
-    // Update status
-    emergency.status = 'Resolved';
-    await emergency.save();
-
-    // Notify dashboard to turn it green
-    if (req.io) {
-      req.io.emit('emergency-resolved', emergency._id);
-    }
-
-    res.json({ success: true, data: emergency });
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Server Error' });
-  }
-};
-
 // @desc    Update emergency details (Severity, Department, Status)
 // @route   PUT /api/v1/emergencies/:id
 export const updateEmergency = async (req, res) => {
@@ -114,14 +129,14 @@ export const updateEmergency = async (req, res) => {
 
     // Update fields if provided
     if (severity) emergency.severity = severity;
-    if (department) emergency.department = department; // Make sure to add this to your Model if needed!
+    if (department) emergency.department = department; 
     if (status) emergency.status = status;
 
     await emergency.save();
 
     // Notify Dashboard
     if (req.io) {
-      req.io.emit('emergency-updated', emergency);
+      req.io.emit('emergency-updated', emergency); // Use the same event name for consistency
     }
 
     res.json({ success: true, data: emergency });
@@ -151,6 +166,27 @@ export const deleteEmergency = async (req, res) => {
     res.json({ success: true, message: 'Case Closed & Removed' });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ success: false, error: 'Server Error' });
+  }
+};
+
+// @desc    Resolve (Legacy function, better to use updateEmergency)
+// @route   PUT /api/v1/emergencies/:id/resolve
+export const resolveEmergency = async (req, res) => {
+  try {
+    const emergency = await Emergency.findById(req.params.id);
+    if (!emergency) return res.status(404).json({ success: false, error: 'Emergency not found' });
+
+    emergency.status = 'Resolved';
+    await emergency.save();
+
+    if (req.io) {
+        // We can just use the generic update event now
+        req.io.emit('emergency-updated', emergency); 
+    }
+
+    res.json({ success: true, data: emergency });
+  } catch (error) {
     res.status(500).json({ success: false, error: 'Server Error' });
   }
 };

@@ -7,7 +7,8 @@ const emergencySchema = new mongoose.Schema({
   },
   severity: { 
     type: String, 
-    enum: ['Critical', 'Serious', 'Minor', 'Pending'],
+    // Added 'Fake' to handle cases where AI detects a hoax
+    enum: ['Critical', 'Serious', 'Minor', 'Pending', 'Fake'],
     default: 'Pending' 
   },
   description: {
@@ -19,7 +20,7 @@ const emergencySchema = new mongoose.Schema({
     lng: { type: Number, required: true }
   },
   imageUrl: {
-    type: String // Stores the path to the uploaded image (e.g., /uploads/emergency-123.jpg)
+    type: String // Stores the path/URL to the uploaded image
   },
   audioUrl: { type: String },
   voiceTranscript: {
@@ -30,6 +31,15 @@ const emergencySchema = new mongoose.Schema({
     enum: ['Pending', 'Assigned', 'Resolved'], 
     default: 'Pending' 
   },
+  
+  // ✅ NEW FIELD: Stores the full AI Analysis response
+  aiAnalysis: {
+    incident: { type: String },       // e.g., "fire", "accident", "normal"
+    human_at_risk: { type: Boolean }, // e.g., true/false
+    severity: { type: String },       // e.g., "critical", "minor"
+    reason: { type: String }          // e.g., "The image shows a large fire..."
+  },
+
   timestamp: { 
     type: Date, 
     default: Date.now 

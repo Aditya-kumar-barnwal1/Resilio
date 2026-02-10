@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { X, MapPin, ShieldCheck, Send, PlayCircle, Navigation, CheckCircle, Truck, AlertTriangle, Trash2 } from 'lucide-react';
+import { X, MapPin, ShieldCheck, Send, PlayCircle, Navigation, CheckCircle, Truck, AlertTriangle, BrainCircuit } from 'lucide-react';
 
 // --- 🔔 CUSTOM TOAST COMPONENT ---
 const Toast = ({ message, type, onClose }) => (
@@ -56,6 +56,16 @@ const EmergencyDetail = ({ incident, onClose }) => {
   const [toast, setToast] = useState(null); // { message, type }
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // ✅ AUTO-SYNC: Update local state when the parent 'incident' prop updates
+  // This ensures the modal updates instantly when the AI finishes in the background
+  useEffect(() => {
+    if (incident) {
+      setSeverity(incident.severity);
+      setStatus(incident.status);
+      if (incident.department) setDepartment(incident.department);
+    }
+  }, [incident]);
+
   if (!incident) return null;
 
   const BACKEND_URL = window.location.hostname === "localhost" 
@@ -68,11 +78,9 @@ const EmergencyDetail = ({ incident, onClose }) => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // 1. Handle Dispatch (The "Assign Nearest Unit" Logic)
+  // 1. Handle Dispatch
   const handleDispatch = async () => {
     setDispatching(true);
-    
-    // 🎭 FAKE "AI SEARCHING" DELAY
     setTimeout(async () => {
       try {
         await axios.put(`${BACKEND_URL}/api/v1/emergencies/${incident._id}`, {
@@ -83,26 +91,23 @@ const EmergencyDetail = ({ incident, onClose }) => {
         
         setStatus('Assigned');
         setDispatching(false);
-        // ✅ Custom Success Toast
         showToast(`Unit Dispatched Successfully!\nID: #UNIT-${Math.floor(Math.random()*900)+100}\nETA: 8 mins`, 'success');
       } catch (err) {
         console.error(err);
         setDispatching(false);
         showToast("Failed to dispatch unit.", 'error');
       }
-    }, 2000); 
+    }, 1500); 
   };
 
-  // 2. Handle Delete Logic (Triggered by Modal)
+  // 2. Handle Delete Logic
   const confirmDelete = async () => {
     setShowConfirm(false); // Close modal
     setLoading(true);
     try {
-      // 🗑️ DELETE REQUEST
       await axios.delete(`${BACKEND_URL}/api/v1/emergencies/${incident._id}`);
-      
       showToast("Case Closed & Removed from System.", 'success');
-      setTimeout(() => onClose(), 1500); // Close detail view after success
+      setTimeout(() => onClose(), 1500); 
     } catch (err) {
       console.error(err);
       showToast("Error deleting case.", 'error');
@@ -125,7 +130,7 @@ const EmergencyDetail = ({ incident, onClose }) => {
       />
 
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
-        <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[650px] md:h-[600px]">
+        <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-[650px]">
           
           {/* --- LEFT SIDE: Visual Evidence --- */}
           <div className="md:w-1/2 bg-slate-200 relative group">
@@ -149,12 +154,12 @@ const EmergencyDetail = ({ incident, onClose }) => {
           </div>
 
           {/* --- RIGHT SIDE: Analysis & Dispatch Center --- */}
-          <div className="md:w-1/2 p-6 md:p-8 flex flex-col">
+          <div className="md:w-1/2 p-6 md:p-8 flex flex-col bg-white">
             {/* Header */}
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-start mb-2">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">{incident.type} Report</h2>
-                <p className="text-slate-500 text-sm">ID: #RES-{incident._id ? incident._id.slice(-6) : '000'}</p>
+                <p className="text-slate-400 text-xs font-mono mt-1">ID: #RES-{incident._id ? incident._id.slice(-6) : '000'}</p>
               </div>
               <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                 <X size={20} />
@@ -163,25 +168,69 @@ const EmergencyDetail = ({ incident, onClose }) => {
 
             <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
               
-              {/* Priority Verification */}
-              <div className={`p-4 rounded-xl border ${severity === 'Critical' ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-200'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <div className="flex items-center gap-2 text-sm font-bold text-slate-700">
-                    <ShieldCheck size={18} className="text-slate-500" /> 
-                    Verification & Priority
+              {/* 🤖 NEW: AI ANALYSIS WIDGET */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 relative overflow-hidden">
+                <div className="flex items-center gap-2 mb-3">
+                  <BrainCircuit size={18} className="text-purple-600" />
+                  <h3 className="text-sm font-bold text-slate-700">AI Assessment</h3>
+                </div>
+
+                {incident.aiAnalysis ? (
+                  // ✅ AI ANALYSIS COMPLETE
+                  <div className="space-y-3 animate-in fade-in duration-500">
+                    <div className="flex gap-2">
+                       <span className={`px-2 py-1 rounded text-xs font-bold uppercase border ${
+                          incident.aiAnalysis.human_at_risk 
+                          ? 'bg-red-100 text-red-700 border-red-200' 
+                          : 'bg-green-100 text-green-700 border-green-200'
+                       }`}>
+                          {incident.aiAnalysis.human_at_risk ? '⚠️ Human Risk Detected' : '✅ No Immediate Human Risk'}
+                       </span>
+                       <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-slate-200 text-slate-600 border border-slate-300">
+                          {incident.aiAnalysis.incident}
+                       </span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed italic">
+                      "{incident.aiAnalysis.reason}"
+                    </p>
                   </div>
+                ) : (
+                  // ⏳ AI ANALYSIS PENDING
+                  <div className="flex flex-col items-center justify-center py-4 text-center">
+                     <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-2"></div>
+                     <p className="text-xs font-medium text-slate-500">Scanning image for threats...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Priority Verification (Manual Override) */}
+              <div className={`p-4 rounded-xl border transition-colors duration-300 ${
+                severity === 'Critical' ? 'bg-red-50 border-red-200' : 
+                severity === 'Serious' ? 'bg-orange-50 border-orange-200' :
+                'bg-blue-50 border-blue-200'
+              }`}>
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                    <ShieldCheck size={18} /> Severity Level
+                  </div>
+                  {/* Indicator showing AI set this */}
+                  {incident.aiAnalysis && (
+                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                      Set by AI (Editable)
+                    </span>
+                  )}
                 </div>
                 
                 <select 
                   value={severity}
                   onChange={(e) => setSeverity(e.target.value)}
                   disabled={status !== 'Pending'}
-                  className="w-full p-2 rounded-lg border border-slate-300 font-bold text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none"
+                  className="w-full p-2.5 rounded-lg border border-slate-300 font-bold text-sm bg-white focus:ring-2 focus:ring-slate-400 outline-none shadow-sm"
                 >
-                  <option value="Critical">🔴 CRITICAL (Immediate Action)</option>
-                  <option value="Serious">🟠 SERIOUS (Dispatch Required)</option>
-                  <option value="Minor">🔵 MINOR (Low Priority)</option>
-                  <option value="Fake">⚪ HOAX / FALSE ALARM</option>
+                  <option value="Critical">🔴 CRITICAL (Life Threatening)</option>
+                  <option value="Serious">🟠 SERIOUS (Immediate Action)</option>
+                  <option value="Minor">🔵 MINOR (Standard Response)</option>
+                  <option value="Fake">⚪ FAKE / HOAX</option>
                 </select>
               </div>
 
@@ -189,7 +238,7 @@ const EmergencyDetail = ({ incident, onClose }) => {
               {incident.audioUrl && (
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2">
-                     <PlayCircle size={14} /> Voice Evidence
+                      <PlayCircle size={14} /> Voice Evidence
                   </h3>
                   <audio controls className="w-full h-8 accent-red-600">
                     <source src={incident.audioUrl} />
@@ -198,7 +247,8 @@ const EmergencyDetail = ({ incident, onClose }) => {
               )}
               
               <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 text-sm text-slate-600 leading-relaxed">
-                 {incident.description || "No description provided."}
+                  <span className="font-bold text-slate-700 block mb-1">User Description:</span>
+                  {incident.description || "No description provided."}
               </div>
 
               {/* Response Config (Only visible when Pending) */}
@@ -206,16 +256,16 @@ const EmergencyDetail = ({ incident, onClose }) => {
                 <div className="grid grid-cols-2 gap-3 pt-2">
                    <button 
                     onClick={() => window.open(`http://googleusercontent.com/maps.google.com/4{incident.location.lat},${incident.location.lng}`, '_blank')}
-                    className="flex items-center justify-center gap-2 bg-blue-50 text-blue-700 py-3 rounded-xl font-bold hover:bg-blue-100 transition border border-blue-200 text-sm"
+                    className="flex items-center justify-center gap-2 bg-white text-blue-600 py-3 rounded-xl font-bold hover:bg-blue-50 transition border border-slate-200 text-sm shadow-sm"
                   >
-                    <Navigation size={16} /> GPS Check
+                    <Navigation size={16} /> Locate GPS
                   </button>
                   
                   <div className="relative">
                     <select 
                       value={department}
                       onChange={(e) => setDepartment(e.target.value)}
-                      className="w-full h-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-slate-300 appearance-none text-center"
+                      className="w-full h-full p-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-slate-300 appearance-none text-center shadow-sm"
                     >
                       <option>🚑 Medical Team</option>
                       <option>🚒 Fire Dept</option>
@@ -228,7 +278,7 @@ const EmergencyDetail = ({ incident, onClose }) => {
             </div>
 
             {/* MAIN ACTION BUTTONS */}
-            <div className="mt-4">
+            <div className="mt-4 pt-4 border-t border-slate-100">
               {status === 'Pending' ? (
                 <button 
                   onClick={handleDispatch}
@@ -240,24 +290,23 @@ const EmergencyDetail = ({ incident, onClose }) => {
                   {dispatching ? (
                     <>
                       <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Locating Nearest Unit...
+                      Connecting to Grid...
                     </>
                   ) : (
                     <>
-                      <Send size={18} /> CONFIRM & DISPATCH
+                      <Send size={18} /> CONFIRM & DISPATCH UNIT
                     </>
                   )}
                 </button>
               ) : (
-                // This triggers the CUSTOM MODAL
                 <button 
                   onClick={() => setShowConfirm(true)}
                   disabled={loading}
                   className="w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.98]"
                 >
-                  {loading ? "Removing..." : (
+                  {loading ? "Closing Case..." : (
                     <>
-                      <CheckCircle size={20} /> MARK JOB COMPLETE (REMOVE)
+                      <CheckCircle size={20} /> MARK RESOLVED (ARCHIVE)
                     </>
                   )}
                 </button>
