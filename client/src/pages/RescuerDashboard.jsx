@@ -1,24 +1,49 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect,useMemo } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { MapPin, Navigation, Truck, CheckCircle, AlertOctagon, Clock, Shield } from 'lucide-react';
+import { MapPin, Navigation, Truck, CheckCircle, AlertOctagon, Clock, Shield, Phone, X } from 'lucide-react';
+
+// 🗺️ Import the Map Component we created earlier
+import LiveRouteMap from '../components/Map/LiveRouteMap'; 
 
 const RescuerDashboard = () => {
   const [tasks, setTasks] = useState([]);
   const [activeMission, setActiveMission] = useState(null);
   const [isOnline, setIsOnline] = useState(true);
   const [reportText, setReportText] = useState("");
+  const [myLocation, setMyLocation] = useState(null); // 📍 Store GPS Data
 
+  // Force Live Backend for Real-World Testing
   const BACKEND_URL = useMemo(() => 
-    window.location.hostname === "localhost" ? "http://localhost:8000" : "https://resilio-tbts.onrender.com", 
-  []);
+  window.location.hostname === "localhost" 
+    ? "http://localhost:8000" 
+    : "https://resilio-tbts.onrender.com", 
+[]);
 
-  // 1. Fetch Assigned Tasks
+  // 1. 🛰️ GPS TRACKER (The "Delivery Guy" Logic)
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      console.log("🛰️ Starting GPS Tracking...");
+      const watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setMyLocation({ lat: latitude, lng: longitude });
+        },
+        (error) => console.error("❌ GPS Error:", error),
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    } else {
+      alert("GPS not supported on this device");
+    }
+  }, []);
+
+  // 2. Fetch Tasks & Socket Connection
   useEffect(() => {
     const fetchTasks = async () => {
       try {
         const { data } = await axios.get(`${BACKEND_URL}/api/v1/emergencies`);
-        // Filter for tasks that are Assigned, En Route, or On Scene
+        // Filter for tasks that are relevant to Rescuers
         const myTasks = data.filter(e => ['Assigned', 'En Route', 'On Scene'].includes(e.status));
         setTasks(myTasks);
       } catch (error) {
@@ -27,10 +52,8 @@ const RescuerDashboard = () => {
     };
     fetchTasks();
 
-    // 2. Real-Time Listener
     const socket = io(BACKEND_URL);
     socket.on('emergency-updated', (updated) => {
-      // If status is relevant to us, update list
       if (['Assigned', 'En Route', 'On Scene'].includes(updated.status)) {
         setTasks(prev => {
           const exists = prev.find(p => p._id === updated._id);
@@ -38,12 +61,12 @@ const RescuerDashboard = () => {
           return [updated, ...prev];
         });
         
-        // Also update the active view if it's the one currently open
+        // Live Update the Active View
         if (activeMission && activeMission._id === updated._id) {
             setActiveMission(updated);
         }
       } else {
-        // If resolved, remove from list
+        // If resolved/removed
         setTasks(prev => prev.filter(p => p._id !== updated._id));
         if (activeMission && activeMission._id === updated._id) {
             setActiveMission(null);
@@ -52,18 +75,37 @@ const RescuerDashboard = () => {
     });
 
     return () => socket.disconnect();
-  }, [BACKEND_URL, activeMission]); // Added activeMission dependency
+  }, [BACKEND_URL, activeMission]);
 
-  // 3. Status Update Logic
+  // 3. Status Update Logic (Robust Version)
   const updateStatus = async (status) => {
     if (!activeMission) return;
+    
+    // Store previous status in case we need to roll back
+    const prevStatus = activeMission.status;
+
+    // Optimistic update (Update UI immediately)
+    setActiveMission(prev => ({ ...prev, status }));
+
     try {
       await axios.put(`${BACKEND_URL}/api/v1/emergencies/${activeMission._id}`, { status });
-      // We rely on the socket to update the state, but optimistic update is faster:
-      setActiveMission(prev => ({ ...prev, status }));
     } catch (err) {
-      console.log(err);
-      alert("Error updating status");
+      console.error("Update Failed:", err);
+
+      // 🚨 ERROR HANDLING
+      if (err.response && err.response.status === 404) {
+         // Case: Mission was deleted or reassigned by Admin
+         alert("🚫 Task no longer exists. Returning to list.");
+         setActiveMission(null); // Kick user back to dashboard
+         
+         // Optional: Remove it from the list entirely
+         setTasks(prev => prev.filter(t => t._id !== activeMission._id));
+      } else {
+         // Case: Server error or internet issue
+         alert("⚠️ Connection Error: Could not update status.");
+         // Rollback UI to previous state
+         setActiveMission(prev => ({ ...prev, status: prevStatus }));
+      }
     }
   };
 
@@ -78,40 +120,40 @@ const RescuerDashboard = () => {
             resolvedBy: "Officer Aditya (Rescue Unit)"
         }
       });
-      // UI Reset
       setActiveMission(null);
       setReportText("");
       alert("Mission Accomplished! Good work.");
     } catch (err) {
-      console.log(err);
+      console.log(err)
       alert("Failed to submit report");
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white font-sans p-4 pb-20">
+    <div className="min-h-screen bg-slate-900 text-white font-sans relative overflow-hidden">
       
-      {/* HEADER */}
-      <header className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Shield className="text-red-500" /> Rescue Ops
-          </h1>
-          <p className="text-slate-400 text-xs">Unit: Alpha-1</p>
-        </div>
-        <div 
-          onClick={() => setIsOnline(!isOnline)}
-          className={`px-4 py-2 rounded-full font-bold text-sm cursor-pointer transition-all ${
-            isOnline ? 'bg-green-500/20 text-green-400 border border-green-500' : 'bg-slate-700 text-slate-400'
-          }`}
-        >
-          {isOnline ? '● ONLINE' : '○ OFFLINE'}
-        </div>
-      </header>
-
-      {/* NO MISSION STATE */}
+      {/* =========================================================
+          VIEW 1: TASK LIST (When No Mission Selected)
+         ========================================================= */}
       {!activeMission && (
-        <div className="space-y-4">
+        <div className="p-4 pb-20">
+          <header className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <Shield className="text-red-500" /> Rescue Ops
+              </h1>
+              <p className="text-slate-400 text-xs">Unit: Alpha-1 • {myLocation ? "GPS Locked ✅" : "Searching GPS..."}</p>
+            </div>
+            <div 
+              onClick={() => setIsOnline(!isOnline)}
+              className={`px-4 py-2 rounded-full font-bold text-sm cursor-pointer transition-all ${
+                isOnline ? 'bg-green-500/20 text-green-400 border border-green-500' : 'bg-slate-700 text-slate-400'
+              }`}
+            >
+              {isOnline ? '● ONLINE' : '○ OFFLINE'}
+            </div>
+          </header>
+
           <h2 className="text-slate-400 text-sm font-bold uppercase tracking-wider mb-4">
             Incoming Tasks ({tasks.length})
           </h2>
@@ -127,7 +169,7 @@ const RescuerDashboard = () => {
               <div 
                 key={task._id} 
                 onClick={() => setActiveMission(task)}
-                className="bg-slate-800 p-4 rounded-xl border border-slate-700 active:scale-[0.98] transition-transform cursor-pointer"
+                className="bg-slate-800 p-4 rounded-xl border border-slate-700 active:scale-[0.98] transition-transform cursor-pointer mb-3 shadow-lg"
               >
                 <div className="flex justify-between items-start mb-2">
                   <span className={`px-2 py-1 rounded text-xs font-bold ${
@@ -139,11 +181,20 @@ const RescuerDashboard = () => {
                     <Clock size={12} /> {new Date(task.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
                   </span>
                 </div>
-                <h3 className="font-bold text-lg mb-1">{task.type} Incident</h3>
+                <h3 className="font-bold text-lg mb-1">{task.type}</h3>
                 <p className="text-slate-400 text-sm line-clamp-2">{task.description}</p>
-                <div className="mt-3 flex items-center gap-2 text-sm text-blue-400">
-                  <MapPin size={16} /> 
-                  <span>Tap to view mission details</span>
+                
+                {/* Distance Badge (Fake for demo, real calculation requires math) */}
+                <div className="mt-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm text-blue-400">
+                        <MapPin size={16} /> 
+                        <span>Tap to Navigate</span>
+                    </div>
+                    {myLocation && (
+                        <span className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">
+                             📍 {(Math.abs(task.location.lat - myLocation.lat) * 111).toFixed(1)} km away
+                        </span>
+                    )}
                 </div>
               </div>
             ))
@@ -151,79 +202,119 @@ const RescuerDashboard = () => {
         </div>
       )}
 
-      {/* ACTIVE MISSION VIEW */}
+      {/* =========================================================
+          VIEW 2: SWIGGY STYLE LIVE MODE (When Mission Active)
+         ========================================================= */}
       {activeMission && (
-        <div className="animate-in slide-in-from-bottom-10 fade-in duration-300">
+        <div className="absolute inset-0 z-50 flex flex-col bg-slate-900">
           
-          {/* Mission Header */}
-          <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 mb-4 relative overflow-hidden">
-            <div className={`absolute top-0 left-0 w-1 h-full ${
-               activeMission.status === 'On Scene' ? 'bg-green-500' : 'bg-blue-500'
-            }`}></div>
-            
-            <h2 className="text-2xl font-bold mb-1">{activeMission.type}</h2>
-            <p className="text-slate-400 text-sm mb-4">{activeMission.description}</p>
-            
-            {/* ✅ FIXED NAVIGATION LINK */}
+          {/* 🗺️ 1. TOP HALF: LIVE MAP */}
+          <div className="flex-1 relative bg-slate-800">
+            {/* Back Button Overlay */}
             <button 
-              onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${activeMission.location.lat},${activeMission.location.lng}`, '_blank')}
-              className="w-full bg-blue-600 hover:bg-blue-500 py-3 rounded-lg font-bold flex items-center justify-center gap-2"
+                onClick={() => setActiveMission(null)}
+                className="absolute top-4 left-4 z-[9999] bg-white/10 backdrop-blur-md p-2 rounded-full text-white hover:bg-white/20"
             >
-              <Navigation size={18} /> START NAVIGATION
+                <X size={24}/>
             </button>
+
+            {myLocation ? (
+                <LiveRouteMap 
+                    rescuerLocation={myLocation} 
+                    emergencyLocation={activeMission.location} 
+                />
+            ) : (
+                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                    <Navigation className="animate-spin mb-4" size={48} />
+                    <p>Acquiring Satellite Lock...</p>
+                </div>
+            )}
           </div>
 
-          {/* Workflow Actions */}
-          <div className="space-y-3">
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-wider ml-1">Update Status</p>
-            
-            {activeMission.status === 'Assigned' && (
-              <button 
-                onClick={() => updateStatus('En Route')}
-                className="w-full bg-slate-700 hover:bg-slate-600 py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 border border-slate-600"
-              >
-                <Truck /> MARK "EN ROUTE"
-              </button>
-            )}
+          {/* 📄 2. BOTTOM HALF: CONTROL SHEET */}
+          <div className="bg-slate-900 border-t border-slate-700 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-50">
+             
+             {/* Handle Bar */}
+             <div className="w-full flex justify-center pt-3 pb-1">
+                 <div className="w-12 h-1.5 bg-slate-700 rounded-full"></div>
+             </div>
 
-            {(activeMission.status === 'Assigned' || activeMission.status === 'En Route') && (
-              <button 
-                onClick={() => updateStatus('On Scene')}
-                className="w-full bg-orange-600 hover:bg-orange-500 py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-orange-900/20"
-              >
-                <AlertOctagon /> MARK "ARRIVED"
-              </button>
-            )}
+             <div className="p-5">
+                {/* Mission Title */}
+                <div className="flex justify-between items-start mb-4">
+                    <div>
+                        <h2 className="text-xl font-bold text-white">{activeMission.type}</h2>
+                        <p className="text-sm text-slate-400 line-clamp-1">{activeMission.description}</p>
+                    </div>
+                    <div className="bg-red-600 text-white px-3 py-1 rounded-lg text-xs font-bold">
+                        {activeMission.severity}
+                    </div>
+                </div>
 
-            {activeMission.status === 'On Scene' && (
-              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 animate-in fade-in">
-                <label className="text-xs font-bold text-slate-400 mb-2 block">FINAL REPORT</label>
-                <textarea 
-                  value={reportText}
-                  onChange={(e) => setReportText(e.target.value)}
-                  placeholder="Describe action taken (e.g. Fire extinguished, 2 injured rescued)..."
-                  className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-sm h-24 mb-3 focus:ring-2 focus:ring-green-500 outline-none"
-                />
-                <button 
-                  onClick={submitResolution}
-                  disabled={!reportText}
-                  className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-green-900/20"
-                >
-                  <CheckCircle /> MISSION COMPLETE
-                </button>
-              </div>
-            )}
+                {/* Action Buttons Grid */}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                    <a 
+                        href={`tel:${100}`} 
+                        className="bg-slate-800 hover:bg-slate-700 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 border border-slate-700"
+                    >
+                        <Phone size={18} /> Call Control
+                    </a>
+                    <a 
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${activeMission.location.lat},${activeMission.location.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                    >
+                        <Navigation size={18} /> Google Maps
+                    </a>
+                </div>
 
-             <button 
-                onClick={() => setActiveMission(null)}
-                className="w-full py-3 text-slate-500 text-sm font-bold"
-              >
-                Back to List
-              </button>
+                {/* 🚦 STATUS SLIDER BUTTONS */}
+                <div className="space-y-3">
+                    
+                    {activeMission.status === 'Assigned' && (
+                        <button 
+                            onClick={() => updateStatus('En Route')}
+                            className="w-full bg-slate-700 hover:bg-slate-600 py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 border-l-4 border-yellow-500 animate-pulse"
+                        >
+                            <Truck /> START NAVIGATION (En Route)
+                        </button>
+                    )}
+
+                    {(activeMission.status === 'En Route') && (
+                        <button 
+                            onClick={() => updateStatus('On Scene')}
+                            className="w-full bg-orange-600 hover:bg-orange-500 py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 shadow-lg shadow-orange-900/20"
+                        >
+                            <AlertOctagon /> I HAVE ARRIVED
+                        </button>
+                    )}
+
+                    {activeMission.status === 'On Scene' && (
+                        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 animate-in fade-in slide-in-from-bottom-5">
+                            <label className="text-xs font-bold text-slate-400 mb-2 block">INCIDENT REPORT</label>
+                            <textarea 
+                                value={reportText}
+                                onChange={(e) => setReportText(e.target.value)}
+                                placeholder="Situation report..."
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-sm h-20 mb-3 focus:ring-2 focus:ring-green-500 outline-none text-white"
+                            />
+                            <button 
+                                onClick={submitResolution}
+                                disabled={!reportText}
+                                className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-3"
+                            >
+                                <CheckCircle /> COMPLETE MISSION
+                            </button>
+                        </div>
+                    )}
+                </div>
+             </div>
           </div>
 
         </div>
       )}
+
     </div>
   );
 };

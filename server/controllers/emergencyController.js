@@ -119,7 +119,7 @@ export const updateEmergency = async (req, res) => {
     if (department) emergency.department = department; 
     if (status) emergency.status = status;
     if (resolutionDetails) emergency.resolutionDetails = resolutionDetails;
-
+    if (assignedRescuerId) emergency.assignedRescuerId = assignedRescuerId;
     // ===============================================
     // 🚨 SCENARIO A: ASSIGNING A RESCUER (Dispatch)
     // ===============================================

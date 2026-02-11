@@ -24,7 +24,7 @@ const emergencySchema = new mongoose.Schema({
   },
   audioUrl: { type: String },
   voiceTranscript: {
-    type: String // Optional: For the Whisper AI text
+    type: String // came from app by voice to text
   },
   status: { 
     type: String, 
