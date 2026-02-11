@@ -28,7 +28,7 @@ const emergencySchema = new mongoose.Schema({
   },
   status: { 
     type: String, 
-    enum: ['Pending', 'Assigned', 'Resolved'], 
+    enum: ['Pending', 'Assigned', 'En Route', 'On Scene', 'Resolved'], 
     default: 'Pending' 
   },
   
@@ -39,7 +39,12 @@ const emergencySchema = new mongoose.Schema({
     severity: { type: String },       // e.g., "critical", "minor"
     reason: { type: String }          // e.g., "The image shows a large fire..."
   },
-
+  // 2. ADD FINAL REPORT FIELD
+  resolutionDetails: {
+    report: String,      // "Patient transported to City Hospital"
+    resolvedAt: Date,
+    resolvedBy: String   // "Unit-Alpha"
+  },
   timestamp: { 
     type: Date, 
     default: Date.now 

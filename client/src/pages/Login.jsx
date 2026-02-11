@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldAlert, Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
-import axios from 'axios'; // 1. Import Axios
+import axios from 'axios'; 
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -16,26 +16,28 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // 2. Use axios.post instead of fetch
-      const response = await axios.post('https://resilio-tbts.onrender.com/api/v1/login', {
+      // Make sure this URL matches your backend route (e.g., /api/v1/auth/login)
+      const response = await axios.post('http://localhost:8000/api/v1/login', {
         email, 
         password
       });
 
-      // Axios automatically throws an error for 4xx/5xx responses, 
-      // so we don't need the "if (!response.ok)" check manually.
-
       const data = response.data;
 
-      // 3. Store the JWT token & User info
+      // 1. Store the JWT token & User info
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
 
-      // 4. Navigate to command center
-      navigate('/dashboard');
+      // 2. ROLE-BASED NAVIGATION 🔀
+      // This is the key change:
+      if (data.user.role === 'rescuer') {
+        navigate('/rescuer');
+      } else {
+        // Default to dashboard for 'admin' or others
+        navigate('/dashboard');
+      }
 
     } catch (err) {
-      // Axios stores the server response error in err.response
       const errorMessage = err.response?.data?.message || 'Invalid credentials. Server connection failed.';
       setError(errorMessage);
     } finally {
@@ -118,7 +120,7 @@ const Login = () => {
         </form>
 
         <p className="mt-8 text-center text-xs text-slate-400 uppercase tracking-widest">
-          [cite_start]Secured by Resilio AI Systems [cite: 52]
+          Secured by Resilio AI Systems
         </p>
       </div>
       

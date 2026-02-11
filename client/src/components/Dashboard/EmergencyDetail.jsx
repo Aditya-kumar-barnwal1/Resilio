@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { X, MapPin, ShieldCheck, Send, PlayCircle, Navigation, CheckCircle, Truck, AlertTriangle, BrainCircuit } from 'lucide-react';
+import { X, MapPin, ShieldCheck, Send, PlayCircle, Navigation, CheckCircle, Truck, AlertTriangle, BrainCircuit, User } from 'lucide-react';
 
 // --- 🔔 CUSTOM TOAST COMPONENT ---
 const Toast = ({ message, type, onClose }) => (
@@ -43,21 +43,36 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message }) => {
 };
 
 const EmergencyDetail = ({ incident, onClose }) => {
-  // Local state for editing and workflow
   const [status, setStatus] = useState(incident?.status || 'Pending');
   const [severity, setSeverity] = useState(incident?.severity || 'Minor');
   const [department, setDepartment] = useState(incident?.department || 'Medical (Ambulance)');
   
-  // UI States for animations
+  // 🆕 NEW: State for Rescuer Selection
+  const [rescuers, setRescuers] = useState([]);
+  const [selectedRescuerId, setSelectedRescuerId] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [dispatching, setDispatching] = useState(false); 
-  
-  // Custom UI States
-  const [toast, setToast] = useState(null); // { message, type }
+  const [toast, setToast] = useState(null); 
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // ✅ AUTO-SYNC: Update local state when the parent 'incident' prop updates
-  // This ensures the modal updates instantly when the AI finishes in the background
+  const BACKEND_URL = window.location.hostname === "localhost" 
+    ? "http://localhost:8000" 
+    : "https://resilio-tbts.onrender.com";
+
+  // ✅ 1. FETCH RESCUERS ON LOAD
+  useEffect(() => {
+    const fetchRescuers = async () => {
+      try {
+        const { data } = await axios.get(`${BACKEND_URL}/api/v1/rescuers`);
+        setRescuers(data);
+      } catch (err) {
+        console.error("Failed to load rescuers", err);
+      }
+    };
+    fetchRescuers();
+  }, [BACKEND_URL]);
+
   useEffect(() => {
     if (incident) {
       setSeverity(incident.severity);
@@ -68,30 +83,31 @@ const EmergencyDetail = ({ incident, onClose }) => {
 
   if (!incident) return null;
 
-  const BACKEND_URL = window.location.hostname === "localhost" 
-    ? "http://localhost:8000" 
-    : "https://resilio-tbts.onrender.com";
-
-  // Helper to show toast that disappears after 4s
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
 
-  // 1. Handle Dispatch
+  // ✅ 2. UPDATED DISPATCH LOGIC
   const handleDispatch = async () => {
+    if (!selectedRescuerId) {
+        showToast("Please assign a specific Rescue Unit!", "error");
+        return;
+    }
+
     setDispatching(true);
     setTimeout(async () => {
       try {
         await axios.put(`${BACKEND_URL}/api/v1/emergencies/${incident._id}`, {
           status: 'Assigned',
           severity,
-          department
+          department,
+          assignedRescuerId: selectedRescuerId // 👈 Send the ID to backend
         });
         
         setStatus('Assigned');
         setDispatching(false);
-        showToast(`Unit Dispatched Successfully!\nID: #UNIT-${Math.floor(Math.random()*900)+100}\nETA: 8 mins`, 'success');
+        showToast(`Unit Dispatched Successfully!\nNotification sent to Rescuer App.`, 'success');
       } catch (err) {
         console.error(err);
         setDispatching(false);
@@ -100,9 +116,8 @@ const EmergencyDetail = ({ incident, onClose }) => {
     }, 1500); 
   };
 
-  // 2. Handle Delete Logic
   const confirmDelete = async () => {
-    setShowConfirm(false); // Close modal
+    setShowConfirm(false); 
     setLoading(true);
     try {
       await axios.delete(`${BACKEND_URL}/api/v1/emergencies/${incident._id}`);
@@ -118,7 +133,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
 
   return (
     <>
-      {/* RENDER CUSTOM POPUPS */}
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <ConfirmModal 
@@ -132,7 +146,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1000] flex items-center justify-center p-4">
         <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-[650px]">
           
-          {/* --- LEFT SIDE: Visual Evidence --- */}
           <div className="md:w-1/2 bg-slate-200 relative group">
             <img 
               src={incident.imageUrl || "https://via.placeholder.com/600x800?text=No+Image"} 
@@ -141,10 +154,16 @@ const EmergencyDetail = ({ incident, onClose }) => {
               onError={(e) => { e.target.onerror = null; e.target.src="https://via.placeholder.com/600x800?text=Image+Load+Failed" }}
             />
             
-            {/* Status Overlay */}
             {status === 'Assigned' && (
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white px-6 py-3 rounded-full font-bold shadow-xl animate-pulse flex items-center gap-2 z-20 whitespace-nowrap">
                 <Truck size={24} /> UNIT DISPATCHED
+              </div>
+            )}
+            
+            {/* Show status overlay for other statuses too */}
+            {['En Route', 'On Scene'].includes(status) && (
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-orange-600 text-white px-6 py-3 rounded-full font-bold shadow-xl flex items-center gap-2 z-20 whitespace-nowrap">
+                <Truck size={24} /> {status.toUpperCase()}
               </div>
             )}
 
@@ -153,9 +172,7 @@ const EmergencyDetail = ({ incident, onClose }) => {
             </div>
           </div>
 
-          {/* --- RIGHT SIDE: Analysis & Dispatch Center --- */}
           <div className="md:w-1/2 p-6 md:p-8 flex flex-col bg-white">
-            {/* Header */}
             <div className="flex justify-between items-start mb-2">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">{incident.type} Report</h2>
@@ -168,7 +185,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
 
             <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
               
-              {/* 🤖 NEW: AI ANALYSIS WIDGET */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 relative overflow-hidden">
                 <div className="flex items-center gap-2 mb-3">
                   <BrainCircuit size={18} className="text-purple-600" />
@@ -176,7 +192,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
                 </div>
 
                 {incident.aiAnalysis ? (
-                  // ✅ AI ANALYSIS COMPLETE
                   <div className="space-y-3 animate-in fade-in duration-500">
                     <div className="flex gap-2">
                        <span className={`px-2 py-1 rounded text-xs font-bold uppercase border ${
@@ -195,7 +210,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
                     </p>
                   </div>
                 ) : (
-                  // ⏳ AI ANALYSIS PENDING
                   <div className="flex flex-col items-center justify-center py-4 text-center">
                      <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-2"></div>
                      <p className="text-xs font-medium text-slate-500">Scanning image for threats...</p>
@@ -203,7 +217,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
                 )}
               </div>
 
-              {/* Priority Verification (Manual Override) */}
               <div className={`p-4 rounded-xl border transition-colors duration-300 ${
                 severity === 'Critical' ? 'bg-red-50 border-red-200' : 
                 severity === 'Serious' ? 'bg-orange-50 border-orange-200' :
@@ -213,7 +226,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
                   <div className="flex items-center gap-2 text-sm font-bold text-slate-800">
                     <ShieldCheck size={18} /> Severity Level
                   </div>
-                  {/* Indicator showing AI set this */}
                   {incident.aiAnalysis && (
                     <span className="text-[10px] uppercase font-bold text-slate-400">
                       Set by AI (Editable)
@@ -234,7 +246,6 @@ const EmergencyDetail = ({ incident, onClose }) => {
                 </select>
               </div>
 
-              {/* Audio Player */}
               {incident.audioUrl && (
                 <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <h3 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2">
@@ -251,33 +262,41 @@ const EmergencyDetail = ({ incident, onClose }) => {
                   {incident.description || "No description provided."}
               </div>
 
-              {/* Response Config (Only visible when Pending) */}
               {status === 'Pending' && (
-                <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="space-y-3 pt-2">
                    <button 
-                    onClick={() => window.open(`http://googleusercontent.com/maps.google.com/4{incident.location.lat},${incident.location.lng}`, '_blank')}
-                    className="flex items-center justify-center gap-2 bg-white text-blue-600 py-3 rounded-xl font-bold hover:bg-blue-50 transition border border-slate-200 text-sm shadow-sm"
+                    onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=$${incident.location.lat},${incident.location.lng}`, '_blank')}
+                    className="w-full flex items-center justify-center gap-2 bg-white text-blue-600 py-3 rounded-xl font-bold hover:bg-blue-50 transition border border-slate-200 text-sm shadow-sm"
                   >
                     <Navigation size={16} /> Locate GPS
                   </button>
                   
-                  <div className="relative">
+                  {/* 🆕 RESCUER ASSIGNMENT DROPDOWN */}
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2">
+                      <User size={14} /> Assign Unit
+                    </label>
                     <select 
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      className="w-full h-full p-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 outline-none focus:ring-2 focus:ring-slate-300 appearance-none text-center shadow-sm"
+                      value={selectedRescuerId}
+                      onChange={(e) => setSelectedRescuerId(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-sm font-medium outline-none focus:ring-2 focus:ring-blue-400"
                     >
-                      <option>🚑 Medical Team</option>
-                      <option>🚒 Fire Dept</option>
-                      <option>🚓 Police Force</option>
-                      <option>🌪 Disaster Relief</option>
+                      <option value="">-- Select Available Unit --</option>
+                      {rescuers.map(rescuer => (
+                        <option 
+                            key={rescuer._id} 
+                            value={rescuer._id} 
+                            disabled={rescuer.availabilityStatus !== 'Available'}
+                        >
+                          {rescuer.availabilityStatus === 'Available' ? '🟢' : '🔴'} {rescuer.name} ({rescuer.vehicleId})
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* MAIN ACTION BUTTONS */}
             <div className="mt-4 pt-4 border-t border-slate-100">
               {status === 'Pending' ? (
                 <button 
