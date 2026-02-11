@@ -28,20 +28,48 @@ const RescuerDashboard = () => {
       : "https://resilio-tbts.onrender.com", 
   []);
 
-  // 1. 🛰️ GPS TRACKER ONLY (Removed User Logic from here)
+// 1. 🛰️ GPS TRACKER WITH HARD FALLBACK (Fixed & Warning-Free)
   useEffect(() => {
+    const JATNI_LOCATION = { lat: 20.173371, lng: 85.706037 };
+    let realGpsFound = false;
+
+    // ⏳ 1. START THE 5-SECOND TIMER
+    const fallbackTimer = setTimeout(() => {
+      if (!realGpsFound) {
+        console.warn("⚠️ GPS took too long (5s). Forcing Jatni Location.");
+        setMyLocation(JATNI_LOCATION);
+      }
+    }, 5000); 
+
     if ("geolocation" in navigator) {
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
+          // ✅ SUCCESS: Real GPS found!
+          realGpsFound = true;
+          clearTimeout(fallbackTimer); 
           setMyLocation({ 
             lat: position.coords.latitude, 
             lng: position.coords.longitude 
           });
         },
-        (error) => console.error("GPS Error:", error),
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+        (error) => {
+          console.error("GPS Error:", error);
+          // ❌ ERROR: If it fails instantly, set fallback
+          if (!realGpsFound) {
+             // ⚡ FIX: Use setTimeout to make this update asynchronous
+             setTimeout(() => setMyLocation(JATNI_LOCATION), 0);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
-      return () => navigator.geolocation.clearWatch(watchId);
+
+      return () => {
+        clearTimeout(fallbackTimer);
+        navigator.geolocation.clearWatch(watchId);
+      };
+    } else {
+      // ⚡ FIX: Wrap this in setTimeout to avoid the "Synchronous State" warning
+      setTimeout(() => setMyLocation(JATNI_LOCATION), 0);
     }
   }, []);
 
