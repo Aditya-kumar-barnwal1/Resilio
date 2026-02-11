@@ -24,7 +24,7 @@ connectDB();
 // 1. DEFINE ALLOWED ORIGINS (Crucial for Socket.io + CORS)
 const allowedOrigins = [
   "http://localhost:5173",             // Your Local Frontend
-  "https://resilio-vert.vercel.app/", // Your Vercel Frontend (Change this to your actual URL)
+  "https://resilio-vert.vercel.app", // Your Vercel Frontend (Change this to your actual URL)
   "http://localhost:3000"              // Fallback
 ];
 

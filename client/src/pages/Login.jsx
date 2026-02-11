@@ -11,39 +11,42 @@ const Login = () => {
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      // Make sure this URL matches your backend route (e.g., /api/v1/auth/login)
-      const response = await axios.post('https://resilio-tbts.onrender.com/api/v1/login', {
-        email, 
-        password
-      });
+  // 1. DYNAMIC URL LOGIC (The smart part)
+  const BACKEND_URL = window.location.hostname === "localhost"
+    ? "http://localhost:8000"           // If on your PC, use Local Backend
+    : "https://resilio-tbts.onrender.com"; // If live, use Render Backend
 
-      const data = response.data;
+  try {
+    // 2. Use the dynamic variable here
+    const response = await axios.post(`${BACKEND_URL}/api/v1/login`, {
+      email, 
+      password
+    });
 
-      // 1. Store the JWT token & User info
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+    const data = response.data;
 
-      // 2. ROLE-BASED NAVIGATION 🔀
-      // This is the key change:
-      if (data.user.role === 'rescuer') {
-        navigate('/rescuer');
-      } else {
-        // Default to dashboard for 'admin' or others
-        navigate('/dashboard');
-      }
+    // 3. Store the JWT token & User info
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
 
-    } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Invalid credentials. Server connection failed.';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
+    // 4. ROLE-BASED NAVIGATION 🔀
+    if (data.user.role === 'rescuer') {
+      navigate('/rescuer');
+    } else {
+      navigate('/dashboard');
     }
-  };
+
+  } catch (err) {
+    const errorMessage = err.response?.data?.message || 'Invalid credentials. Server connection failed.';
+    setError(errorMessage);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
